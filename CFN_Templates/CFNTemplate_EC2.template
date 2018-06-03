@@ -1,0 +1,256 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "CloudFormation Sample Template for ec2 instance creation, and execute bash script to install wordpress site.",
+    "Parameters": {
+        "SecurityGroupId": {
+            "Description": "Security Group associated with the EC2 instance",
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "ConstraintDescription": "must be an existing EC2 Security Group."
+        },
+		"SubnetId": {
+            "Description": "Subnet where the EC2 instance will be launched",
+            "Type": "AWS::EC2::Subnet::Id",
+            "ConstraintDescription": "must be an existing subnetId."
+        },
+        "KeyName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+        },
+        "InstanceType": {
+            "Description": "WebServer EC2 instance type",
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": [
+                "t2.nano",
+                "t2.micro"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "DBName": {
+            "Default": "wordpressdb",
+            "Description": "The WordPress database name",
+            "Type": "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+        },
+        "DBUser": {
+            "NoEcho": "true",
+            "Description": "The WordPress database admin account username",
+            "Type": "String",
+            "MinLength": "1",
+            "MaxLength": "16",
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+        },
+        "DBPassword": {
+            "NoEcho": "true",
+            "Description": "The WordPress database admin account password",
+            "Type": "String",
+            "MinLength": "8",
+            "MaxLength": "41",
+            "AllowedPattern": "[a-zA-Z0-9]*",
+            "ConstraintDescription": "must contain only alphanumeric characters."
+        },
+        "DBRootPassword": {
+            "NoEcho": "true",
+            "Description": "MySQL root password",
+            "Type": "String",
+            "MinLength": "8",
+            "MaxLength": "41",
+            "AllowedPattern": "[a-zA-Z0-9]*",
+            "ConstraintDescription": "must contain only alphanumeric characters."
+        }
+    },
+    "Mappings": {
+        "AWSInstanceType2Arch": {
+            "t2.nano": {
+                "Arch": "HVM64"
+            },
+            "t2.micro": {
+                "Arch": "HVM64"
+            }
+        },
+        "AWSInstanceType2NATArch": {
+            "t2.nano": {
+                "Arch": "NATHVM64"
+            },
+            "t2.micro": {
+                "Arch": "NATHVM64"
+            }
+        },
+        "AWSRegionArch2AMI": {
+            "us-east-1": {
+                "HVM64": "ami-b04433cf"
+            }
+        }
+    },
+    "Resources": {
+        "WebServer": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "wordpress_install": [
+                            "install_cfn"
+                        ]
+                    },
+                    "install_cfn": {
+                        "files": {
+                            "/home/ubuntu/MyModules/wordpress/manifests/conf.pp": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "class wordpress::conf {\n",
+                                            "\t\t\t\t\t# You can change the values of these variables\n",
+                                            "\t\t\t\t\t# according to your preferences\n",
+                                            "\t\t\t\t\t$root_password = '",
+                                            {
+                                                "Ref": "DBRootPassword"
+                                            },
+                                            "'\n",
+                                            "\t\t\t\t\t$db_name = '",
+                                            {
+                                                "Ref": "DBName"
+                                            },
+                                            "'\n",
+                                            "\t\t\t\t\t$db_user = '",
+                                            {
+                                                "Ref": "DBUser"
+                                            },
+                                            "'\n",
+                                            "\t\t\t\t\t$db_user_password = '",
+                                            {
+                                                "Ref": "DBPassword"
+                                            },
+                                            "'\n",
+                                            "\t\t\t\t\t$db_host = 'localhost'\n",
+                                            "\t\t\t\t\t# Don't change the following variables\n",
+                                            "\t\t\t\t\t# This will evaluate to wp@localhost\n",
+                                            "\t\t\t\t\t$db_user_host = \"${db_user}@${db_host}\"\n",
+                                            "\t\t\t\t\t# This will evaluate to wp@localhost/wordpress.*\n",
+                                            "\t\t\t\t\t$db_user_host_db = \"${db_user}@${db_host}/${db_name}.*\"\n",
+                                            "\t\t\t\t}",
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000664",
+                                "owner": "ubuntu",
+                                "group": "ubuntu"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSRegionArch2AMI",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        {
+                            "Fn::FindInMap": [
+                                "AWSInstanceType2Arch",
+                                {
+                                    "Ref": "InstanceType"
+                                },
+                                "Arch"
+                            ]
+                        }
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+				"NetworkInterfaces" : [{
+					  "GroupSet"                 : [{ "Ref" : "SecurityGroupId" }],
+					  "AssociatePublicIpAddress" : "true",
+					  "DeviceIndex"              : "0",
+					  "DeleteOnTermination"      : "true",
+					  "SubnetId"                 : { "Ref" : "SubnetId" }
+					}],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -ex\n",
+                                "echo 'step-0' \n",
+                                "mkdir aws-cfn-bootstrap-latest\n",
+                                "curl https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz | tar xz -C aws-cfn-bootstrap-latest --strip-components 1\n",
+                                "apt-get -y install python-setuptools\n",
+                                "easy_install aws-cfn-bootstrap-latest\n",
+                                "echo 'step-1' \n",
+                                "/usr/local/bin/cfn-init",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource WebServer ",
+                                "         --configsets wordpress_install ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "echo 'step-3' \n",
+                                "cd /home/ubuntu/MyModules \n",
+                                "echo 'step-4' \n",
+                                "sudo /opt/puppetlabs/bin/puppet module build wordpress\n",
+                                "echo 'step-5' \n",
+                                "sudo /opt/puppetlabs/bin/puppet module install /home/ubuntu/MyModules/wordpress/pkg/do-wordpress-0.1.0.tar.gz\n",
+                                "echo 'step-6' \n",
+                                "sudo /opt/puppetlabs/bin/puppet apply /home/ubuntu/MyModules/install-wp.pp\n",
+                                "echo 'step-7' \n",
+                                "/usr/local/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource WebServer ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Timeout": "PT30M"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "WebsiteURL": {
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "http://",
+                        {
+                            "Fn::GetAtt": [
+                                "WebServer",
+                                "PublicDnsName"
+                            ]
+                        },
+                        "/index.php"
+                    ]
+                ]
+            },
+            "Description": "WordPress Website"
+        }
+    }
+}
